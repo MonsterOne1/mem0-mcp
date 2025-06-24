@@ -859,12 +859,11 @@ async def handle_sse(request: Request) -> None:
         request.receive,
         request._send,
     ) as (read_stream, write_stream):
-        # Get the MCP server instance
-        server = mcp._mcp_server
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
+        # Run the FastMCP server
+        await mcp.run(
+            read_stream=read_stream,
+            write_stream=write_stream,
+            transport=sse_transport
         )
 
 # Create health check endpoint
