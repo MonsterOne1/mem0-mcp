@@ -119,6 +119,41 @@ mem0_client.update_project(custom_instructions=CUSTOM_INSTRUCTIONS)
 sse_transport = SseServerTransport("/messages/")
 
 @mcp.tool(
+    description="""Check if there are relevant memories before answering questions. This tool should be used proactively to provide context-aware responses. It quickly checks for memories related to the current topic and returns a summary."""
+)
+def check_relevant_memories(topic: str):
+    """
+    Quick check for relevant memories about a topic
+    Args:
+        topic: The topic or context to check memories for
+    Returns:
+        Brief summary of relevant memories or indication that none exist
+    """
+    try:
+        # Search for relevant memories
+        results = retry_operation(
+            lambda: mem0_client.search(topic, user_id=DEFAULT_USER_ID, limit=5),
+            max_retries=2,
+            retry_delay=0.5
+        )
+        
+        if not results:
+            return f"No specific memories found about '{topic}'."
+        
+        # Summarize findings
+        summary = f"Found {len(results)} relevant memories about '{topic}':\n"
+        for i, result in enumerate(results, 1):
+            memory_text = result.get('memory', result.get('text', 'No content'))
+            score = result.get('score', 0)
+            if score > 0.7:  # Only include highly relevant memories
+                summary += f"• {memory_text}\n"
+        
+        return summary
+    except Exception as e:
+        logger.warning(f"Quick memory check failed: {str(e)}")
+        return "Could not check memories at this time."
+
+@mcp.tool(
     description="""Add new information to your personal memory. This tool stores any important information 
     about yourself, your preferences, knowledge, or anything you want me to remember. When storing information, 
     you should include:
@@ -200,7 +235,7 @@ def get_all_memories():
         return f"Error retrieving memories: {str(e)}. Please try again later."
 
 @mcp.tool(
-    description="""Search through your memories using natural language. Find specific information, preferences, or past conversations. Returns up to 10 most relevant results."""
+    description="""IMPORTANT: Use this tool FIRST before answering any question about the user. Search through stored memories using natural language to find relevant information, preferences, or past conversations. This helps provide personalized and context-aware responses. Returns up to 10 most relevant results."""
 )
 def search_memories(query: str):
     """

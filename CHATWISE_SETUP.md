@@ -135,6 +135,14 @@ DEFAULT_USER_ID = "chatwise_user_1"
 3. 重启服务器和 Chatwise
 4. 查看 Chatwise 的 MCP 支持文档
 
+## 优化 ChatWise 使用记忆系统
+
+为了让 ChatWise 更主动地使用记忆功能，请参考 [CHATWISE_MEMORY_PROMPTS.md](./CHATWISE_MEMORY_PROMPTS.md) 文件，其中包含：
+- 系统提示词优化
+- 对话模板
+- 触发词设置
+- 使用示例
+
 ## 联系支持
 
 如果配置过程中遇到问题：
