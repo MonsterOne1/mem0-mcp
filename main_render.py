@@ -115,7 +115,13 @@ Extract the Following Information:
 """
 mem0_client.update_project(custom_instructions=CUSTOM_INSTRUCTIONS)
 
-# Create global SSE transport instance
+# Session ID normalization helper
+def normalize_session_id(session_id: str) -> str:
+    """Normalize session ID by removing hyphens for consistent format"""
+    return session_id.replace('-', '')
+
+# Create global SSE transport instance with session normalization
+# Create SSE transport with proper configuration
 sse_transport = SseServerTransport("/messages/")
 
 @mcp.tool(
@@ -884,51 +890,42 @@ async def health_check(request: Request):
     )
 
 # Create SSE transport handler manually
-async def handle_sse(request: Request) -> None:
-    # Handle CORS preflight
-    if request.method == "OPTIONS":
-        return Response(
-            content="",
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            }
-        )
+async def handle_sse(request: Request):
+    """Handle SSE connections - works like main.py"""
+    logger.debug(f"SSE request: {request.method} {request.url}")
     
-    try:
-        # Handle both GET and POST for SSE
-        async with sse_transport.connect_sse(
-            request.scope,
-            request.receive,
-            request._send,
-        ) as (read_stream, write_stream):
-            # Get the internal MCP server and run it
-            server = mcp._mcp_server
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
-    except Exception as e:
-        logger.error(f"SSE handler error: {str(e)}")
-        # Return empty response for SSE to avoid breaking the connection
-        return Response(
-            content="",
-            status_code=200,
-            headers={"Access-Control-Allow-Origin": "*"}
+    # The SSE handler itself doesn't return anything
+    # The transport handles the response
+    async with sse_transport.connect_sse(
+        request.scope,
+        request.receive,
+        request._send,
+    ) as (read_stream, write_stream):
+        server = mcp._mcp_server
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
         )
 
-# Create Starlette app with routes
-app = Starlette(
-    routes=[
-        Route("/sse", endpoint=handle_sse, methods=["POST", "GET", "OPTIONS"]),
+# Create the Starlette app factory
+def create_app():
+    \"\"\"Create Starlette app with MCP server\"\"\"
+    # Get the MCP server instance
+    mcp_server = mcp._mcp_server
+    
+    # Create the routes
+    routes = [
+        Route("/sse", endpoint=handle_sse),  # No methods specified, like main.py
         Mount("/messages/", app=sse_transport.handle_post_message),
         Route("/", endpoint=health_check, methods=["GET"]),
         Route("/health", endpoint=health_check, methods=["GET"])
-    ],
-    debug=False  # Disable debug mode in production
-)
+    ]
+    
+    return Starlette(routes=routes, debug=False)
+
+# Create the app
+app = create_app()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MCP Server with Mem0')
@@ -940,9 +937,14 @@ if __name__ == "__main__":
     # Configure logging with more detail
     import logging
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if os.environ.get('DEBUG') else logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    
+    # Log startup information
+    logger.info(f"MCP Server starting with FastMCP version")
+    logger.info(f"SSE Transport initialized at /messages/")
+    logger.info(f"Session ID normalization enabled")
     
     print(f"Starting MCP server with mem0 on {args.host}:{args.port}")
     print(f"SSE endpoint available at http://{args.host}:{args.port}/sse")
