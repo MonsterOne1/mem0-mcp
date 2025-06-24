@@ -21,7 +21,7 @@ const memoryClient = new MemoryClient({ apiKey: MEM0_API_KEY });
 const ADD_MEMORY_TOOL: Tool = {
   name: 'add-memory',
   description:
-    'Add a new memory. This method is called everytime the user informs anything about themselves, their preferences, or anything that has any relevent information whcih can be useful in the future conversation. This can also be called when the user asks you to remember something.',
+    'Add new information to your personal memory. This method is called everytime the user informs anything about themselves, their preferences, or anything that has any relevant information which can be useful in the future conversation. This can also be called when the user asks you to remember something.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -46,7 +46,7 @@ const SEARCH_MEMORIES_TOOL: Tool = {
     properties: {
       query: {
         type: 'string',
-        description: "The search query. This is the query that the user has asked for. Example: 'What did I tell you about the weather last week?' or 'What did I tell you about my friend John?'",
+        description: "The search query. This is the query that the user has asked for. Example: 'What did I tell you about my coffee preference?' or 'What did I tell you about my friend John?'",
       },
       userId: {
         type: 'string',
