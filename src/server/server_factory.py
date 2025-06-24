@@ -3,13 +3,14 @@ Server factory for creating MCP servers with different configurations
 """
 import os
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any
 from mcp.server.fastmcp import FastMCP
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route, Mount
 import json
 
@@ -223,7 +224,3 @@ class ServerFactory:
         )
         
         return mcp, app
-
-
-# Import datetime for health check
-from datetime import datetime
