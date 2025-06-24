@@ -3,6 +3,7 @@ from starlette.applications import Starlette
 from mcp.server.sse import SseServerTransport
 from starlette.requests import Request
 from starlette.routing import Mount, Route
+from starlette.responses import Response
 from mcp.server import Server
 import uvicorn
 from mem0 import MemoryClient
@@ -131,18 +132,53 @@ def search_memories(query: str):
 
 # Create SSE transport handler
 async def handle_sse(request: Request):
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        return Response(
+            content="",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            }
+        )
+    
+    # Handle GET request with info
+    if request.method == "GET":
+        return Response(
+            content="mem0-mcp SSE endpoint is running. Use POST method to connect.",
+            headers={
+                "Content-Type": "text/plain",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+    
+    # Handle POST for SSE
     async with SseServerTransport(
         request.url.path,
         await request.body(),
         request.headers
     ) as transport:
         await mcp.run(transport=transport)
+    
+    # Add CORS headers to response
+    transport.response.headers["Access-Control-Allow-Origin"] = "*"
     return transport.response
 
-# Create Starlette app with SSE route
+# Create health check endpoint
+async def health_check(request: Request):
+    return Response(
+        content=json.dumps({"status": "healthy", "service": "mem0-mcp"}),
+        media_type="application/json",
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
+# Create Starlette app with routes
 app = Starlette(
     routes=[
-        Route("/sse", endpoint=handle_sse, methods=["POST"])
+        Route("/sse", endpoint=handle_sse, methods=["POST", "GET", "OPTIONS"]),
+        Route("/", endpoint=health_check, methods=["GET"]),
+        Route("/health", endpoint=health_check, methods=["GET"])
     ]
 )
 
@@ -159,5 +195,6 @@ if __name__ == "__main__":
     
     print(f"Starting MCP server with mem0 on {args.host}:{args.port}")
     print(f"SSE endpoint available at http://{args.host}:{args.port}/sse")
+    print(f"Health check available at http://{args.host}:{args.port}/health")
     
     uvicorn.run(app, host=args.host, port=args.port)
