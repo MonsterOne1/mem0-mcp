@@ -910,7 +910,7 @@ async def handle_sse(request: Request):
 
 # Create the Starlette app factory
 def create_app():
-    \"\"\"Create Starlette app with MCP server\"\"\"
+    """Create Starlette app with MCP server"""
     # Get the MCP server instance
     mcp_server = mcp._mcp_server
     
