@@ -875,7 +875,15 @@ def import_memories(json_data: str, skip_duplicates: bool = True):
     except Exception as e:
         return f"Error importing memories: {str(e)}"
 
-# Create SSE transport handler
+# Create health check endpoint
+async def health_check(request: Request):
+    return Response(
+        content=json.dumps({"status": "healthy", "service": "mem0-mcp"}),
+        media_type="application/json",
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
+# Create SSE transport handler manually
 async def handle_sse(request: Request) -> None:
     # Handle CORS preflight
     if request.method == "OPTIONS":
@@ -888,26 +896,28 @@ async def handle_sse(request: Request) -> None:
             }
         )
     
-    # Handle both GET and POST for SSE
-    async with sse_transport.connect_sse(
-        request.scope,
-        request.receive,
-        request._send,
-    ) as (read_stream, write_stream):
-        # Run the FastMCP server
-        await mcp.run(
-            read_stream=read_stream,
-            write_stream=write_stream,
-            transport=sse_transport
+    try:
+        # Handle both GET and POST for SSE
+        async with sse_transport.connect_sse(
+            request.scope,
+            request.receive,
+            request._send,
+        ) as (read_stream, write_stream):
+            # Get the internal MCP server and run it
+            server = mcp._mcp_server
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+    except Exception as e:
+        logger.error(f"SSE handler error: {str(e)}")
+        # Return empty response for SSE to avoid breaking the connection
+        return Response(
+            content="",
+            status_code=200,
+            headers={"Access-Control-Allow-Origin": "*"}
         )
-
-# Create health check endpoint
-async def health_check(request: Request):
-    return Response(
-        content=json.dumps({"status": "healthy", "service": "mem0-mcp"}),
-        media_type="application/json",
-        headers={"Access-Control-Allow-Origin": "*"}
-    )
 
 # Create Starlette app with routes
 app = Starlette(
@@ -916,7 +926,8 @@ app = Starlette(
         Mount("/messages/", app=sse_transport.handle_post_message),
         Route("/", endpoint=health_check, methods=["GET"]),
         Route("/health", endpoint=health_check, methods=["GET"])
-    ]
+    ],
+    debug=False  # Disable debug mode in production
 )
 
 if __name__ == "__main__":
@@ -926,12 +937,23 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Configure logging
+    # Configure logging with more detail
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     
     print(f"Starting MCP server with mem0 on {args.host}:{args.port}")
     print(f"SSE endpoint available at http://{args.host}:{args.port}/sse")
     print(f"Health check available at http://{args.host}:{args.port}/health")
+    print(f"Messages endpoint available at http://{args.host}:{args.port}/messages/")
     
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Run with proper configuration
+    uvicorn.run(
+        app, 
+        host=args.host, 
+        port=args.port,
+        log_level="info",
+        access_log=True
+    )
