@@ -143,17 +143,7 @@ async def handle_sse(request: Request):
             }
         )
     
-    # Handle GET request with info
-    if request.method == "GET":
-        return Response(
-            content="mem0-mcp SSE endpoint is running. Use POST method to connect.",
-            headers={
-                "Content-Type": "text/plain",
-                "Access-Control-Allow-Origin": "*",
-            }
-        )
-    
-    # Handle POST for SSE
+    # Handle both GET and POST for SSE
     sse_transport = SseServerTransport("/messages/")
     
     async with sse_transport.connect_sse(
