@@ -1,89 +1,249 @@
-# MCP Server with Mem0 for Personal AI Assistant Memory
+# mem0-mcp
 
-This demonstrates a structured approach for using an [MCP](https://modelcontextprotocol.io/introduction) server with [mem0](https://mem0.ai) to manage personal information and preferences for AI assistants. The server can be used with Cursor and provides essential tools for storing, retrieving, and searching personal memories and information.
-
-## Installation
-
-1. Clone this repository
-2. Initialize the `uv` environment:
-
-```bash
-uv venv
-```
-
-3. Activate the virtual environment:
-
-```bash
-source .venv/bin/activate
-```
-
-4. Install the dependencies using `uv`:
-
-```bash
-# Install in editable mode from pyproject.toml
-uv pip install -e .
-```
-
-5. Update `.env` file in the root directory with your mem0 API key:
-
-```bash
-MEM0_API_KEY=your_api_key_here
-```
-
-## Usage
-
-1. Start the MCP server:
-
-```bash
-uv run main.py
-```
-
-2. In Cursor, connect to the SSE endpoint, follow this [doc](https://docs.cursor.com/context/model-context-protocol) for reference:
-
-```
-http://0.0.0.0:8080/sse
-```
-
-3. Open the Composer in Cursor and switch to `Agent` mode.
-
-## Demo with Cursor
-
-https://github.com/user-attachments/assets/56670550-fb11-4850-9905-692d3496231c
+A unified MCP (Model Context Protocol) server for persistent memory management using [mem0.ai](https://mem0.ai). This server enables AI assistants to remember information across conversations, providing a human-like memory system.
 
 ## Features
 
-The server provides three main tools for managing personal information:
+- **Persistent Memory**: Store and retrieve information across conversations
+- **Semantic Search**: Find relevant memories using natural language
+- **Auto-categorization**: Automatically categorize memories (personal info, work, goals, etc.)
+- **Two Modes**: 
+  - **Basic Mode**: Essential memory operations (add, search, get all)
+  - **Full Mode**: Advanced features including update, delete, statistics, and analysis
+- **Multiple Deployment Options**: Local development, cloud deployment (Render, etc.)
+- **Chatwise Integration**: Import/export memories from Chatwise chat exports
+- **Extensible Architecture**: Modular design for easy customization
 
-1. `add_memory`: Store personal information, preferences, and important details including:
-   - Personal preferences and habits
-   - Important facts and knowledge
-   - Contact information and relationships
-   - Goals, plans, and aspirations
-   - Skills, expertise, and learning interests
-   - Important dates and events
-   - Context from previous conversations
+## Quick Start
 
-2. `get_all_memories`: Retrieve all stored personal information to review patterns, check preferences, and ensure no relevant information is missed.
+### Prerequisites
 
-3. `search_memories`: Semantically search through stored personal information to find relevant:
-   - Personal preferences and details
-   - Knowledge and facts
-   - Important dates and events
-   - Skills and expertise
-   - Goals and plans
-   - Context from previous conversations
+- Python 3.8+
+- mem0.ai API key (get one at [mem0.ai](https://mem0.ai))
 
-## Why?
+### Installation
 
-This implementation allows for a persistent personal memory system that can be accessed via MCP. The SSE-based server can run as a process that AI assistants connect to, use, and disconnect from whenever needed. This pattern fits well with "cloud-native" use cases where the server and clients can be decoupled processes on different nodes.
-
-### Server
-
-By default, the server runs on 0.0.0.0:8080 but is configurable with command line arguments like:
-
-```
-uv run main.py --host <your host> --port <your port>
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/mem0-mcp.git
+cd mem0-mcp
 ```
 
-The server exposes an SSE endpoint at `/sse` that MCP clients can connect to for accessing the personal memory management tools.
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
+3. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env and add your MEM0_API_KEY
+```
+
+### Running the Server
+
+#### Basic Mode (3 tools)
+```bash
+python main.py
+```
+
+#### Full Mode (all tools)
+```bash
+python src/server/main.py --mode full
+```
+
+#### Custom Configuration
+```bash
+python src/server/main.py --host 0.0.0.0 --port 8080 --mode full --debug
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MEM0_API_KEY` | Your mem0.ai API key | Required |
+| `PORT` | Server port | 8080 |
+| `MODE` | Server mode (basic/full) | full |
+| `DEBUG` | Enable debug logging | false |
+| `DEFAULT_USER_ID` | Default user ID for memories | cursor_mcp |
+
+### Command Line Options
+
+```
+python src/server/main.py [OPTIONS]
+
+Options:
+  --mode {basic,full}    Server mode (default: full)
+  --host HOST           Host to bind to (default: 0.0.0.0)
+  --port PORT           Port to bind to (default: 8080)
+  --name NAME           Server name (default: mem0-mcp)
+  --debug               Enable debug mode
+  --no-instructions     Disable custom instructions
+```
+
+## Available Tools
+
+### Basic Mode Tools
+
+1. **add_memory** - Add new information to memory
+2. **search_memories** - Search memories using natural language
+3. **get_all_memories** - Retrieve all stored memories
+
+### Full Mode Tools (includes Basic tools plus)
+
+4. **update_memory** - Update existing memories
+5. **delete_memory** - Delete specific memories
+6. **advanced_search_memories** - Search with filters (category, score)
+7. **get_memory_stats** - Get statistics about stored memories
+8. **analyze_memories** - Analyze patterns and insights
+9. **get_memories_by_category** - Get memories by category
+10. **export_memories** - Export all memories in JSON format
+11. **check_relevant_memories** - Quick check for topic-relevant memories
+
+## Memory Categories
+
+Memories are automatically categorized into:
+
+- **personal_info** - Name, age, location, contact details
+- **work** - Job, career, professional information
+- **relationships** - Family, friends, social connections
+- **goals** - Plans, aspirations, objectives
+- **knowledge** - Facts, learning, information
+- **skills** - Abilities, languages, expertise
+- **dates_events** - Important dates, appointments
+- **preferences** - Likes, dislikes, favorites
+- **health** - Medical, wellness, fitness
+- **hobbies** - Entertainment, leisure activities
+- **technical** - Programming, technology
+- **finance** - Money, budget, investments
+
+## Integration
+
+### Claude Desktop / Cursor
+
+Add to your MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "mem0-mcp": {
+      "command": "python",
+      "args": ["/path/to/mem0-mcp/main.py"]
+    }
+  }
+}
+```
+
+### Chatwise
+
+1. Start the server with SSE support
+2. In Chatwise, add MCP server:
+   - Name: `mem0-mcp`
+   - URL: `http://localhost:8080/sse`
+   - Transport: SSE
+
+## Import/Export
+
+### Import from Chatwise
+
+```python
+from src.importers import import_memories
+
+# Import a single file
+result = import_memories("chatwise_export.json")
+
+# Preview before importing
+from src.importers import preview_import
+preview = preview_import("chatwise_export.json", limit=10)
+```
+
+### Export Memories
+
+```python
+from src.importers import export_memories
+
+# Export all memories
+export_memories("my_memories_backup.json", include_metadata=True)
+```
+
+## Development
+
+### Project Structure
+
+```
+mem0-mcp/
+├── src/
+│   ├── core/           # Core modules (client, config, categories)
+│   ├── tools/          # Memory tools implementation
+│   ├── server/         # Server implementation
+│   └── importers/      # Import/export utilities
+├── scripts/            # Utility scripts
+├── docs/              # Documentation
+└── main.py            # Legacy entry point
+```
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install pytest pytest-asyncio
+
+# Run tests
+pytest tests/
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## Deployment
+
+### Render
+
+1. Click [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+2. Set environment variables
+3. Deploy
+
+### Docker
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "src/server/main.py", "--mode", "full"]
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"MEM0_API_KEY is required"** - Set your API key in .env file
+2. **"Failed to validate request"** - Ensure the server is fully initialized before making requests
+3. **Connection errors** - Check firewall settings and port availability
+
+### Debug Mode
+
+Enable debug logging:
+```bash
+python src/server/main.py --debug
+# or
+export DEBUG=true
+```
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Acknowledgments
+
+- [mem0.ai](https://mem0.ai) for the memory API
+- [Anthropic MCP](https://github.com/anthropics/mcp) for the protocol specification
+- Contributors and maintainers
