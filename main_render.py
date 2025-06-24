@@ -34,6 +34,9 @@ Extract the Following Information:
 """
 mem0_client.update_project(custom_instructions=CUSTOM_INSTRUCTIONS)
 
+# Create global SSE transport instance
+sse_transport = SseServerTransport("/messages/")
+
 @mcp.tool(
     description="""Add new information to your personal memory. This tool stores any important information 
     about yourself, your preferences, knowledge, or anything you want me to remember. When storing information, 
@@ -131,7 +134,7 @@ def search_memories(query: str):
         return f"Error searching memories: {str(e)}"
 
 # Create SSE transport handler
-async def handle_sse(request: Request):
+async def handle_sse(request: Request) -> None:
     # Handle CORS preflight
     if request.method == "OPTIONS":
         return Response(
@@ -144,8 +147,6 @@ async def handle_sse(request: Request):
         )
     
     # Handle both GET and POST for SSE
-    sse_transport = SseServerTransport("/messages/")
-    
     async with sse_transport.connect_sse(
         request.scope,
         request.receive,
@@ -168,7 +169,6 @@ async def health_check(request: Request):
     )
 
 # Create Starlette app with routes
-sse_transport = SseServerTransport("/messages/")
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse, methods=["POST", "GET", "OPTIONS"]),
