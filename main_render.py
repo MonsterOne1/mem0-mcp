@@ -154,16 +154,20 @@ async def handle_sse(request: Request):
         )
     
     # Handle POST for SSE
-    async with SseServerTransport(
-        request.url.path,
-        await request.body(),
-        request.headers
-    ) as transport:
-        await mcp.run(transport=transport)
+    sse_transport = SseServerTransport("/messages/")
     
-    # Add CORS headers to response
-    transport.response.headers["Access-Control-Allow-Origin"] = "*"
-    return transport.response
+    async with sse_transport.connect_sse(
+        request.scope,
+        request.receive,
+        request.send,
+    ) as (read_stream, write_stream):
+        # Get the MCP server instance
+        server = mcp._mcp_server
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
+        )
 
 # Create health check endpoint
 async def health_check(request: Request):
@@ -174,9 +178,11 @@ async def health_check(request: Request):
     )
 
 # Create Starlette app with routes
+sse_transport = SseServerTransport("/messages/")
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse, methods=["POST", "GET", "OPTIONS"]),
+        Mount("/messages/", app=sse_transport.handle_post_message),
         Route("/", endpoint=health_check, methods=["GET"]),
         Route("/health", endpoint=health_check, methods=["GET"])
     ]
