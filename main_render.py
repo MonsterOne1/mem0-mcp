@@ -120,9 +120,7 @@ def normalize_session_id(session_id: str) -> str:
     """Normalize session ID by removing hyphens for consistent format"""
     return session_id.replace('-', '')
 
-# Create global SSE transport instance with session normalization
-# Create SSE transport with proper configuration
-sse_transport = SseServerTransport("/messages/")
+# SSE transport will be created in create_starlette_app function
 
 @mcp.tool(
     description="""Check if there are relevant memories before answering questions. This tool should be used proactively to provide context-aware responses. It quickly checks for memories related to the current topic and returns a summary."""
@@ -889,43 +887,36 @@ async def health_check(request: Request):
         headers={"Access-Control-Allow-Origin": "*"}
     )
 
-# Create SSE transport handler manually
-async def handle_sse(request: Request):
-    """Handle SSE connections - works like main.py"""
-    logger.debug(f"SSE request: {request.method} {request.url}")
-    
-    # The SSE handler itself doesn't return anything
-    # The transport handles the response
-    async with sse_transport.connect_sse(
-        request.scope,
-        request.receive,
-        request._send,
-    ) as (read_stream, write_stream):
-        server = mcp._mcp_server
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+# Create Starlette app using the same pattern as main.py
+def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
+    """Create a Starlette application that can serve the provided mcp server with SSE."""
+    sse = SseServerTransport("/messages/")
 
-# Create the Starlette app factory
-def create_app():
-    """Create Starlette app with MCP server"""
-    # Get the MCP server instance
-    mcp_server = mcp._mcp_server
-    
-    # Create the routes
-    routes = [
-        Route("/sse", endpoint=handle_sse),  # No methods specified, like main.py
-        Mount("/messages/", app=sse_transport.handle_post_message),
-        Route("/", endpoint=health_check, methods=["GET"]),
-        Route("/health", endpoint=health_check, methods=["GET"])
-    ]
-    
-    return Starlette(routes=routes, debug=False)
+    async def handle_sse(request: Request) -> None:
+        async with sse.connect_sse(
+                request.scope,
+                request.receive,
+                request._send,  # noqa: SLF001
+        ) as (read_stream, write_stream):
+            await mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp_server.create_initialization_options(),
+            )
+
+    return Starlette(
+        debug=debug,
+        routes=[
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages/", app=sse.handle_post_message),
+            Route("/", endpoint=health_check, methods=["GET"]),
+            Route("/health", endpoint=health_check, methods=["GET"])
+        ],
+    )
 
 # Create the app
-app = create_app()
+mcp_server = mcp._mcp_server
+app = create_starlette_app(mcp_server, debug=False)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MCP Server with Mem0')
