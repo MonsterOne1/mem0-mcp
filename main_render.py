@@ -149,7 +149,7 @@ async def handle_sse(request: Request):
     async with sse_transport.connect_sse(
         request.scope,
         request.receive,
-        request.send,
+        request._send,
     ) as (read_stream, write_stream):
         # Get the MCP server instance
         server = mcp._mcp_server
