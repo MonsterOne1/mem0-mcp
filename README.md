@@ -114,6 +114,20 @@ mem0-mcp/
 └── README.md
 ```
 
+## Deployment
+
+### Render
+
+To deploy on Render, you need to update the Start Command in your service settings:
+
+1. Go to your Render dashboard
+2. Select your mem0-mcp service
+3. Go to Settings → Build & Deploy
+4. Change "Start Command" to: `python main.py`
+5. Save changes and manually deploy
+
+Alternatively, you can use the render.yaml configuration provided in this repository.
+
 ## License
 
 MIT License - see LICENSE file for details
