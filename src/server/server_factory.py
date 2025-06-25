@@ -91,7 +91,7 @@ class ServerFactory:
     def create_starlette_app(
         mcp_server: Server,
         debug: bool = False
-    ) -> Starlette:
+    ):
         """
         Create a Starlette application that can serve the MCP server with SSE
         
@@ -102,29 +102,36 @@ class ServerFactory:
         Returns:
             Configured Starlette app
         """
+        # Create SSE transport
         sse = SseServerTransport("/messages/")
         
-        async def sse_handler(scope, receive, send):
-            """ASGI handler for SSE connections"""
-            if scope["type"] == "http" and scope["path"] == "/sse":
+        # Create the ASGI app for SSE
+        async def sse_app(scope, receive, send):
+            """ASGI app that handles both SSE and message endpoints"""
+            path = scope.get("path", "")
+            
+            if path == "/sse" and scope["method"] == "GET":
+                # Handle SSE connection
                 async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
                     await mcp_server.run(
                         read_stream,
                         write_stream,
-                        mcp_server.create_initialization_options(),
+                        mcp_server.create_initialization_options()
                     )
+            elif path.startswith("/messages/"):
+                # Delegate to SSE transport's message handler
+                await sse.handle_post_message(scope, receive, send)
+            elif path in ["/", "/health"]:
+                # Health check
+                response = await ServerFactory.health_check(Request(scope, receive))
+                await response(scope, receive, send)
             else:
-                # Let Starlette handle other routes
-                await Response(status_code=404)(scope, receive, send)
+                # 404 for unknown paths
+                response = Response("Not found", status_code=404)
+                await response(scope, receive, send)
         
-        routes = [
-            Route("/sse", endpoint=sse_handler, methods=["GET"]),
-            Mount("/messages/", app=sse.handle_post_message),
-            Route("/", endpoint=ServerFactory.health_check, methods=["GET"]),
-            Route("/health", endpoint=ServerFactory.health_check, methods=["GET"])
-        ]
-        
-        return Starlette(debug=debug, routes=routes)
+        # Return the app directly
+        return sse_app
     
     @staticmethod
     def create_server(
