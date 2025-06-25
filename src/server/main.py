@@ -1,5 +1,5 @@
 """
-Unified MCP server for mem0 - supports both basic and full modes
+MCP server for mem0 - Simplified version
 """
 import os
 import sys
@@ -25,23 +25,15 @@ logger = logging.getLogger(__name__)
 
 # Default custom instructions
 DEFAULT_INSTRUCTIONS = """
-Extract the Following Information:  
-
+Extract and remember the following information:
 - Personal Information: Save important details about the user's preferences, habits, and personal information.
 - Knowledge & Facts: Store useful information, facts, and knowledge that might be referenced later.
-- Preferences & Settings: Remember user's preferences for various topics, tools, and services.
-- Important Dates & Events: Note significant dates, appointments, and events.
-- Context & History: Keep track of previous conversations and important context.
-- Skills & Expertise: Document user's skills, areas of expertise, and learning goals.
-- Relationships & Contacts: Remember information about people, relationships, and contact details.
-- Goals & Plans: Store user's goals, plans, and aspirations for future reference.
+- Important Context: Keep track of important context and information from conversations.
 """
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Unified MCP Server with Mem0')
-    parser.add_argument('--mode', choices=['basic', 'full'], default='full',
-                        help='Server mode: basic (3 tools) or full (all tools)')
+    parser = argparse.ArgumentParser(description='MCP Server with Mem0')
     parser.add_argument('--host', type=str, default='0.0.0.0',
                         help='Host to bind to')
     parser.add_argument('--port', type=int, default=None,
@@ -63,9 +55,8 @@ def main():
     custom_instructions = None if args.no_instructions else DEFAULT_INSTRUCTIONS
     
     # Create server
-    logger.info(f"Creating {args.mode} mode server '{args.name}'...")
+    logger.info(f"Creating MCP server '{args.name}'...")
     mcp, app = ServerFactory.create_server(
-        mode=args.mode,
         name=args.name,
         custom_instructions=custom_instructions,
         debug=args.debug
@@ -79,7 +70,7 @@ def main():
     
     # Print user-friendly startup message
     print("\n" + "="*50)
-    print(f"🚀 MCP Server with Mem0 - {args.mode.upper()} Mode")
+    print(f"🚀 MCP Server with Mem0")
     print("="*50)
     print(f"📍 Server: http://{args.host}:{args.port}")
     print(f"🔌 SSE Endpoint: http://{args.host}:{args.port}/sse")
