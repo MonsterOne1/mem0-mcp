@@ -104,13 +104,9 @@ class ServerFactory:
         """
         sse = SseServerTransport("/messages/")
         
-        async def handle_sse(request: Request) -> None:
+        async def handle_sse(scope, receive, send):
             """Handle SSE connections"""
-            async with sse.connect_sse(
-                request.scope,
-                request.receive,
-                request._send,  # noqa: SLF001
-            ) as (read_stream, write_stream):
+            async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
                 await mcp_server.run(
                     read_stream,
                     write_stream,
