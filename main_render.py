@@ -9,7 +9,6 @@ from starlette.requests import Request
 from starlette.routing import Mount, Route
 from starlette.responses import Response, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from mcp.server import Server
 import uvicorn
 from mem0 import MemoryClient
@@ -26,7 +25,7 @@ from typing import Optional, List, Dict, Any
 load_dotenv()
 
 # Version identifier
-VERSION = "2.0.0-fixed"
+VERSION = "2.1.0-sse-fix"
 
 # Configure logging
 logging.basicConfig(
@@ -199,28 +198,15 @@ async def health_check(request: Request):
         headers={"Access-Control-Allow-Origin": "*"}
     )
 
-class ErrorHandlingMiddleware(BaseHTTPMiddleware):
-    """Middleware to handle errors and ensure proper responses"""
-    async def dispatch(self, request, call_next):
-        try:
-            response = await call_next(request)
-            # If response is None, return a proper Response object
-            if response is None:
-                logger.warning(f"Route handler returned None for {request.url.path}")
-                return Response(status_code=200)
-            return response
-        except Exception as e:
-            logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={"error": "Internal server error", "message": str(e)}
-            )
+# Note: BaseHTTPMiddleware is incompatible with SSE streaming responses
+# We'll handle errors within the route handlers instead
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
     """Create a Starlette application that can serve the provided mcp server with SSE."""
     sse = SseServerTransport("/messages/")
 
-    async def handle_sse(request: Request):
+    async def handle_sse(request: Request) -> Response:
+        """Handle SSE connections with proper error handling"""
         client_ip = request.client.host if request.client else "unknown"
         logger.info(f"SSE connection initiated from {client_ip}")
         
@@ -237,13 +223,12 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
                     mcp_server.create_initialization_options(),
                 )
         except Exception as e:
-            logger.error(f"SSE error for {client_ip}: {str(e)}")
-            if "NoneType" not in str(e):  # Don't re-raise NoneType errors
-                raise
+            logger.error(f"SSE error for {client_ip}: {str(e)}", exc_info=True)
+            # Don't re-raise exceptions to allow graceful shutdown
         finally:
             logger.info(f"SSE connection closed for {client_ip}")
         
-        # Always return a Response object
+        # Critical: Always return a Response object to avoid TypeError
         return Response(status_code=200)
 
     app = Starlette(
@@ -256,8 +241,7 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
         ],
     )
     
-    # Add middlewares in correct order (outermost first)
-    app.add_middleware(ErrorHandlingMiddleware)
+    # Add CORS middleware (but not ErrorHandlingMiddleware as it's incompatible with SSE)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allow all origins for development
