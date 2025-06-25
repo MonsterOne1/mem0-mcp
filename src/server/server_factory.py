@@ -10,7 +10,7 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route, Mount
 import json
 
@@ -104,17 +104,21 @@ class ServerFactory:
         """
         sse = SseServerTransport("/messages/")
         
-        async def handle_sse(scope, receive, send):
-            """Handle SSE connections"""
-            async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-                await mcp_server.run(
-                    read_stream,
-                    write_stream,
-                    mcp_server.create_initialization_options(),
-                )
+        async def sse_handler(scope, receive, send):
+            """ASGI handler for SSE connections"""
+            if scope["type"] == "http" and scope["path"] == "/sse":
+                async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
+                    await mcp_server.run(
+                        read_stream,
+                        write_stream,
+                        mcp_server.create_initialization_options(),
+                    )
+            else:
+                # Let Starlette handle other routes
+                await Response(status_code=404)(scope, receive, send)
         
         routes = [
-            Route("/sse", endpoint=handle_sse),
+            Route("/sse", endpoint=sse_handler, methods=["GET"]),
             Mount("/messages/", app=sse.handle_post_message),
             Route("/", endpoint=ServerFactory.health_check, methods=["GET"]),
             Route("/health", endpoint=ServerFactory.health_check, methods=["GET"])
