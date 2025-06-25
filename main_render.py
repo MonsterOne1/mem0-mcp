@@ -25,7 +25,7 @@ from typing import Optional, List, Dict, Any
 load_dotenv()
 
 # Version identifier
-VERSION = "2.2.0-debug"
+VERSION = "2.3.0-session-fix"
 
 # Configure logging
 logging.basicConfig(
@@ -221,12 +221,34 @@ async def debug_sse(request: Request):
         headers={"Access-Control-Allow-Origin": "*"}
     )
 
+# Endpoint to handle stale sessions and guide reconnection
+async def handle_session_error(request: Request):
+    """Return guidance for clients with invalid sessions"""
+    return JSONResponse(
+        content={
+            "error": "session_not_found",
+            "message": "Session has expired or was not found. Please reconnect to /sse endpoint.",
+            "reconnect_url": "/sse",
+            "instructions": [
+                "1. Close any existing SSE connections",
+                "2. Connect to /sse endpoint",
+                "3. Wait for 'endpoint' event with new session URL",
+                "4. Use the new session URL for subsequent requests"
+            ]
+        },
+        status_code=404,
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
 # Note: BaseHTTPMiddleware is incompatible with SSE streaming responses
 # We'll handle errors within the route handlers instead
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
     """Create a Starlette application that can serve the provided mcp server with SSE."""
     sse = SseServerTransport("/messages/")
+    
+    # Track known stale sessions
+    KNOWN_STALE_SESSION = "467db479-421a-41d2-9ff4-a7ad29678bb6"
 
     async def handle_sse(request: Request) -> Response:
         """Handle SSE connections with proper error handling"""
@@ -254,11 +276,46 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
         # Critical: Always return a Response object to avoid TypeError
         return Response(status_code=200)
 
+    # Custom message handler that intercepts stale sessions
+    async def handle_messages_wrapper(request: Request):
+        """Wrapper to handle known stale sessions"""
+        session_id = request.query_params.get("session_id", "")
+        
+        # Check for known stale session
+        if session_id == KNOWN_STALE_SESSION:
+            logger.warning(f"Intercepted known stale session: {session_id}")
+            return JSONResponse(
+                content={
+                    "error": "session_expired",
+                    "message": "This session has expired. Please reconnect to establish a new session.",
+                    "details": {
+                        "session_id": session_id,
+                        "action_required": "reconnect",
+                        "sse_endpoint": "/sse",
+                        "instructions": [
+                            "Close any existing SSE connections",
+                            "Connect to /sse endpoint",
+                            "Wait for 'endpoint' event with new session URL",
+                            "Use the new session URL for future requests"
+                        ]
+                    }
+                },
+                status_code=410,  # Gone
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "X-Session-Status": "expired",
+                    "X-Reconnect-URL": "/sse"
+                }
+            )
+        
+        # Otherwise, delegate to the normal SSE handler
+        return await sse.handle_post_message(request.scope, request.receive, request._send)
+    
     app = Starlette(
         debug=debug,
         routes=[
             Route("/sse", endpoint=handle_sse),
-            Mount("/messages/", app=sse.handle_post_message),
+            Route("/messages/", endpoint=handle_messages_wrapper, methods=["POST"]),
             Route("/", endpoint=health_check, methods=["GET"]),
             Route("/health", endpoint=health_check, methods=["GET"]),
             Route("/debug/sse", endpoint=debug_sse, methods=["GET"])
