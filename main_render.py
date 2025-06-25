@@ -25,7 +25,7 @@ from typing import Optional, List, Dict, Any
 load_dotenv()
 
 # Version identifier
-VERSION = "2.1.0-sse-fix"
+VERSION = "2.2.0-debug"
 
 # Configure logging
 logging.basicConfig(
@@ -193,8 +193,31 @@ def check_relevant_memories(topic: str) -> str:
 # Create health check endpoint
 async def health_check(request: Request):
     return Response(
-        content=json.dumps({"status": "healthy", "service": "mem0-mcp", "timestamp": datetime.now().isoformat()}),
+        content=json.dumps({
+            "status": "healthy", 
+            "service": "mem0-mcp", 
+            "version": VERSION,
+            "timestamp": datetime.now().isoformat()
+        }),
         media_type="application/json",
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
+# Debug endpoint to check SSE transport state
+async def debug_sse(request: Request):
+    debug_info = {
+        "version": VERSION,
+        "sse_endpoint": "/sse",
+        "messages_endpoint": "/messages/",
+        "instructions": {
+            "1": "Connect to /sse using EventSource or SSE client",
+            "2": "Server will send 'endpoint' event with session URL",
+            "3": "Use that URL for subsequent POST requests to /messages/"
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+    return JSONResponse(
+        content=debug_info,
         headers={"Access-Control-Allow-Origin": "*"}
     )
 
@@ -237,7 +260,8 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
             Route("/", endpoint=health_check, methods=["GET"]),
-            Route("/health", endpoint=health_check, methods=["GET"])
+            Route("/health", endpoint=health_check, methods=["GET"]),
+            Route("/debug/sse", endpoint=debug_sse, methods=["GET"])
         ],
     )
     
