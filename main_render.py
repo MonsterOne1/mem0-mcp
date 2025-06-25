@@ -25,7 +25,7 @@ from typing import Optional, List, Dict, Any
 load_dotenv()
 
 # Version identifier
-VERSION = "2.3.0-session-fix"
+VERSION = "2.4.0-intercept-fix"
 
 # Configure logging
 logging.basicConfig(
@@ -276,46 +276,68 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
         # Critical: Always return a Response object to avoid TypeError
         return Response(status_code=200)
 
-    # Custom message handler that intercepts stale sessions
-    async def handle_messages_wrapper(request: Request):
-        """Wrapper to handle known stale sessions"""
-        session_id = request.query_params.get("session_id", "")
-        
-        # Check for known stale session
-        if session_id == KNOWN_STALE_SESSION:
-            logger.warning(f"Intercepted known stale session: {session_id}")
-            return JSONResponse(
-                content={
-                    "error": "session_expired",
-                    "message": "This session has expired. Please reconnect to establish a new session.",
-                    "details": {
-                        "session_id": session_id,
-                        "action_required": "reconnect",
-                        "sse_endpoint": "/sse",
-                        "instructions": [
-                            "Close any existing SSE connections",
-                            "Connect to /sse endpoint",
-                            "Wait for 'endpoint' event with new session URL",
-                            "Use the new session URL for future requests"
-                        ]
-                    }
-                },
-                status_code=410,  # Gone
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "X-Session-Status": "expired",
-                    "X-Reconnect-URL": "/sse"
-                }
-            )
-        
-        # Otherwise, delegate to the normal SSE handler
-        return await sse.handle_post_message(request.scope, request.receive, request._send)
+    # Create a custom ASGI app that intercepts stale sessions
+    class MessageInterceptor:
+        def __init__(self, sse_transport):
+            self.sse = sse_transport
+            
+        async def __call__(self, scope, receive, send):
+            """ASGI app that intercepts known stale sessions"""
+            if scope["type"] == "http":
+                # Parse query string to get session_id
+                query_string = scope.get("query_string", b"").decode()
+                params = dict(param.split("=") for param in query_string.split("&") if "=" in param)
+                session_id = params.get("session_id", "")
+                
+                # Check for known stale session
+                if session_id == KNOWN_STALE_SESSION:
+                    logger.warning(f"Intercepted known stale session: {session_id}")
+                    
+                    # Send HTTP response for stale session
+                    await send({
+                        "type": "http.response.start",
+                        "status": 410,  # Gone
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"access-control-allow-origin", b"*"),
+                            (b"x-session-status", b"expired"),
+                            (b"x-reconnect-url", b"/sse"),
+                        ],
+                    })
+                    
+                    response_body = json.dumps({
+                        "error": "session_expired",
+                        "message": "This session has expired. Please reconnect to establish a new session.",
+                        "details": {
+                            "session_id": session_id,
+                            "action_required": "reconnect",
+                            "sse_endpoint": "/sse",
+                            "instructions": [
+                                "Close any existing SSE connections",
+                                "Connect to /sse endpoint",
+                                "Wait for 'endpoint' event with new session URL",
+                                "Use the new session URL for future requests"
+                            ]
+                        }
+                    }).encode()
+                    
+                    await send({
+                        "type": "http.response.body",
+                        "body": response_body,
+                    })
+                    return
+            
+            # Otherwise, delegate to the normal SSE handler
+            await self.sse.handle_post_message(scope, receive, send)
+    
+    # Create the interceptor
+    message_interceptor = MessageInterceptor(sse)
     
     app = Starlette(
         debug=debug,
         routes=[
             Route("/sse", endpoint=handle_sse),
-            Route("/messages/", endpoint=handle_messages_wrapper, methods=["POST"]),
+            Mount("/messages/", app=message_interceptor),
             Route("/", endpoint=health_check, methods=["GET"]),
             Route("/health", endpoint=health_check, methods=["GET"]),
             Route("/debug/sse", endpoint=debug_sse, methods=["GET"])
