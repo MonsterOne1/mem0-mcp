@@ -25,7 +25,7 @@ from typing import Optional, List, Dict, Any
 load_dotenv()
 
 # Version identifier
-VERSION = "2.4.0-intercept-fix"
+VERSION = "2.5.0-middleware-fix"
 
 # Configure logging
 logging.basicConfig(
@@ -243,12 +243,56 @@ async def handle_session_error(request: Request):
 # Note: BaseHTTPMiddleware is incompatible with SSE streaming responses
 # We'll handle errors within the route handlers instead
 
+# Middleware to intercept stale sessions
+class StaleSessionMiddleware:
+    """Middleware to intercept and handle stale session requests"""
+    KNOWN_STALE_SESSION = "467db479-421a-41d2-9ff4-a7ad29678bb6"
+    
+    def __init__(self, app):
+        self.app = app
+        
+    async def __call__(self, scope, receive, send):
+        """ASGI middleware to intercept stale sessions"""
+        if scope["type"] == "http" and scope["path"].startswith("/messages/"):
+            # Parse query string
+            query_string = scope.get("query_string", b"").decode()
+            
+            # Check if this is the stale session
+            if f"session_id={self.KNOWN_STALE_SESSION}" in query_string:
+                logger.warning(f"StaleSessionMiddleware: Intercepted stale session request")
+                
+                # Send 410 Gone response
+                await send({
+                    "type": "http.response.start",
+                    "status": 410,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"access-control-allow-origin", b"*"],
+                        [b"x-session-expired", b"true"],
+                        [b"x-reconnect-required", b"true"],
+                    ],
+                })
+                
+                error_body = json.dumps({
+                    "error": "session_expired",
+                    "message": "Session has expired. Please reconnect to /sse endpoint.",
+                    "session_id": self.KNOWN_STALE_SESSION,
+                    "reconnect_url": "/sse",
+                    "instructions": "Connect to /sse to establish a new session"
+                }).encode()
+                
+                await send({
+                    "type": "http.response.body",
+                    "body": error_body,
+                })
+                return
+        
+        # Pass through to the app
+        await self.app(scope, receive, send)
+
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
     """Create a Starlette application that can serve the provided mcp server with SSE."""
     sse = SseServerTransport("/messages/")
-    
-    # Track known stale sessions
-    KNOWN_STALE_SESSION = "467db479-421a-41d2-9ff4-a7ad29678bb6"
 
     async def handle_sse(request: Request) -> Response:
         """Handle SSE connections with proper error handling"""
@@ -276,75 +320,20 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
         # Critical: Always return a Response object to avoid TypeError
         return Response(status_code=200)
 
-    # Create a custom ASGI app that intercepts stale sessions
-    class MessageInterceptor:
-        def __init__(self, sse_transport):
-            self.sse = sse_transport
-            
-        async def __call__(self, scope, receive, send):
-            """ASGI app that intercepts known stale sessions"""
-            if scope["type"] == "http":
-                # Parse query string to get session_id
-                query_string = scope.get("query_string", b"").decode()
-                params = dict(param.split("=") for param in query_string.split("&") if "=" in param)
-                session_id = params.get("session_id", "")
-                
-                # Check for known stale session
-                if session_id == KNOWN_STALE_SESSION:
-                    logger.warning(f"Intercepted known stale session: {session_id}")
-                    
-                    # Send HTTP response for stale session
-                    await send({
-                        "type": "http.response.start",
-                        "status": 410,  # Gone
-                        "headers": [
-                            (b"content-type", b"application/json"),
-                            (b"access-control-allow-origin", b"*"),
-                            (b"x-session-status", b"expired"),
-                            (b"x-reconnect-url", b"/sse"),
-                        ],
-                    })
-                    
-                    response_body = json.dumps({
-                        "error": "session_expired",
-                        "message": "This session has expired. Please reconnect to establish a new session.",
-                        "details": {
-                            "session_id": session_id,
-                            "action_required": "reconnect",
-                            "sse_endpoint": "/sse",
-                            "instructions": [
-                                "Close any existing SSE connections",
-                                "Connect to /sse endpoint",
-                                "Wait for 'endpoint' event with new session URL",
-                                "Use the new session URL for future requests"
-                            ]
-                        }
-                    }).encode()
-                    
-                    await send({
-                        "type": "http.response.body",
-                        "body": response_body,
-                    })
-                    return
-            
-            # Otherwise, delegate to the normal SSE handler
-            await self.sse.handle_post_message(scope, receive, send)
-    
-    # Create the interceptor
-    message_interceptor = MessageInterceptor(sse)
     
     app = Starlette(
         debug=debug,
         routes=[
             Route("/sse", endpoint=handle_sse),
-            Mount("/messages/", app=message_interceptor),
+            Mount("/messages/", app=sse.handle_post_message),
             Route("/", endpoint=health_check, methods=["GET"]),
             Route("/health", endpoint=health_check, methods=["GET"]),
             Route("/debug/sse", endpoint=debug_sse, methods=["GET"])
         ],
     )
     
-    # Add CORS middleware (but not ErrorHandlingMiddleware as it's incompatible with SSE)
+    # Add middlewares - order matters! StaleSessionMiddleware must be first
+    app.add_middleware(StaleSessionMiddleware)  # This runs first
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allow all origins for development
